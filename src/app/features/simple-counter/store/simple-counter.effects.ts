@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { select, Store } from '@ngrx/store';
 import { PersistenceService } from '../../../core/persistence/persistence.service';
@@ -40,6 +40,16 @@ import { DateService } from 'src/app/core/date/date.service';
 
 @Injectable()
 export class SimpleCounterEffects {
+  private _actions$ = inject(Actions);
+  private _store$ = inject<Store<any>>(Store);
+  private _timeTrackingService = inject(GlobalTrackingIntervalService);
+  private _dateService = inject(DateService);
+  private _persistenceService = inject(PersistenceService);
+  private _simpleCounterService = inject(SimpleCounterService);
+  private _imexMetaService = inject(ImexMetaService);
+  private _snackService = inject(SnackService);
+  private _idleService = inject(IdleService);
+
   updateSimpleCountersStorage$: Observable<unknown> = createEffect(
     () =>
       this._actions$.pipe(
@@ -66,11 +76,12 @@ export class SimpleCounterEffects {
 
   checkTimedCounters$: Observable<unknown> = createEffect(() =>
     this._simpleCounterService.enabledAndToggledSimpleCounters$.pipe(
-      switchMap((items) =>
-        items && items.length
+      switchMap((itemsI) => {
+        const items = itemsI.filter((item) => item.type === SimpleCounterType.StopWatch);
+        return items && items.length
           ? this._timeTrackingService.tick$.pipe(map((tick) => ({ tick, items })))
-          : EMPTY,
-      ),
+          : EMPTY;
+      }),
       mergeMap(({ items, tick }) => {
         const today = this._dateService.todayStr();
         return items.map((item) =>
@@ -159,26 +170,6 @@ export class SimpleCounterEffects {
       ),
     { dispatch: false },
   );
-
-  // NOTE: makes more sense to do this inside the idle dialog itself
-  // disableOnIdle$: Observable<unknown> = createEffect(() =>
-  //   this._idleService.isIdle$.pipe(
-  //     filter((isIdle) => isIdle),
-  //     map(() => turnOffAllSimpleCounterCounters()),
-  //   ),
-  // );
-
-  constructor(
-    private _actions$: Actions,
-    private _store$: Store<any>,
-    private _timeTrackingService: GlobalTrackingIntervalService,
-    private _dateService: DateService,
-    private _persistenceService: PersistenceService,
-    private _simpleCounterService: SimpleCounterService,
-    private _imexMetaService: ImexMetaService,
-    private _snackService: SnackService,
-    private _idleService: IdleService,
-  ) {}
 
   private _saveToLs(simpleCounterState: SimpleCounterState): void {
     this._persistenceService.simpleCounter.saveState(simpleCounterState, {

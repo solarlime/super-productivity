@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { loadFromRealLs, saveToRealLs } from '../../core/persistence/local-storage';
 import { LS } from '../../core/persistence/storage-keys.const';
 import { DOCUMENT } from '@angular/common';
@@ -10,7 +10,7 @@ import { throttleTime } from 'rxjs/operators';
 
 @Injectable({ providedIn: 'root' })
 export class UiHelperService {
-  constructor(@Inject(DOCUMENT) private _document: Document) {}
+  private _document = inject<Document>(DOCUMENT);
 
   initElectron(): void {
     this._initMousewheelZoomForElectron();
@@ -22,7 +22,7 @@ export class UiHelperService {
       return;
     }
 
-    window.ea.setZoomFactor(zoomFactor);
+    window.ea.setZoomFactor(this._zoomFactorMinMax(zoomFactor));
     this._updateLocalUiHelperSettings({ zoomFactor });
   }
 
@@ -36,7 +36,7 @@ export class UiHelperService {
 
     const zoomFactor = currentZoom + zoomBy;
 
-    window.ea.setZoomFactor(zoomFactor);
+    window.ea.setZoomFactor(this._zoomFactorMinMax(zoomFactor));
     this._updateLocalUiHelperSettings({ zoomFactor });
   }
 
@@ -51,6 +51,12 @@ export class UiHelperService {
     } else {
       console.error('Cannot execute focus app window in browser');
     }
+  }
+
+  private _zoomFactorMinMax(zoomFactor: number): number {
+    zoomFactor = Math.min(Math.max(zoomFactor, 0.1), 4);
+    zoomFactor = Math.round(zoomFactor * 1000) / 1000;
+    return zoomFactor;
   }
 
   private _initMousewheelZoomForElectron(): void {
@@ -72,7 +78,6 @@ export class UiHelperService {
           } else if (event.deltaY < 0) {
             zoomFactor += ZOOM_DELTA;
           }
-          zoomFactor = Math.min(Math.max(zoomFactor, 0.1), 4);
           this.zoomTo(zoomFactor);
         }
       });

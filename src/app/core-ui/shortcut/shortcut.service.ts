@@ -1,4 +1,4 @@
-import { Injectable, NgZone } from '@angular/core';
+import { Injectable, NgZone, inject } from '@angular/core';
 import { IS_ELECTRON } from '../../app.constants';
 import { checkKeyCombo } from '../../util/check-key-combo';
 import { GlobalConfigService } from '../../features/config/global-config.service';
@@ -17,28 +17,41 @@ import { TranslateService } from '@ngx-translate/core';
 import { T } from '../../t.const';
 import { Store } from '@ngrx/store';
 import { showFocusOverlay } from '../../features/focus-mode/store/focus-mode.actions';
+import { SyncProviderService } from '../../imex/sync/sync-provider.service';
+import { first, mapTo, switchMap } from 'rxjs/operators';
+import { fromEvent, merge, Observable, of } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
 })
 export class ShortcutService {
+  private _configService = inject(GlobalConfigService);
+  private _router = inject(Router);
+  private _layoutService = inject(LayoutService);
+  private _matDialog = inject(MatDialog);
+  private _taskService = inject(TaskService);
+  private _workContextService = inject(WorkContextService);
+  private _snackService = inject(SnackService);
+  private _activatedRoute = inject(ActivatedRoute);
+  private _uiHelperService = inject(UiHelperService);
+  private _bookmarkService = inject(BookmarkService);
+  private _translateService = inject(TranslateService);
+  private _syncProviderService = inject(SyncProviderService);
+  private _ngZone = inject(NgZone);
+  private _store = inject(Store);
+
+  isCtrlPressed$: Observable<boolean> = fromEvent(document, 'keydown').pipe(
+    switchMap((ev: Event) => {
+      const e = ev as KeyboardEvent;
+      if (e.ctrlKey) {
+        return merge(of(true), fromEvent(document, 'keyup').pipe(mapTo(false)));
+      }
+      return of(false);
+    }),
+  );
   backlogPos?: number;
 
-  constructor(
-    private _configService: GlobalConfigService,
-    private _router: Router,
-    private _layoutService: LayoutService,
-    private _matDialog: MatDialog,
-    private _taskService: TaskService,
-    private _workContextService: WorkContextService,
-    private _snackService: SnackService,
-    private _activatedRoute: ActivatedRoute,
-    private _uiHelperService: UiHelperService,
-    private _bookmarkService: BookmarkService,
-    private _translateService: TranslateService,
-    private _ngZone: NgZone,
-    private _store: Store,
-  ) {
+  constructor() {
     this._activatedRoute.queryParams.subscribe((params) => {
       if (params && params.backlogPos) {
         this.backlogPos = +params.backlogPos;
@@ -71,7 +84,7 @@ export class ShortcutService {
     }
   }
 
-  handleKeyDown(ev: KeyboardEvent): void {
+  async handleKeyDown(ev: KeyboardEvent): Promise<void> {
     const cfg = this._configService.cfg;
     if (!cfg) {
       throw new Error();
@@ -150,6 +163,14 @@ export class ShortcutService {
     } else if (checkKeyCombo(ev, keys.openProjectNotes)) {
       ev.preventDefault();
       this._layoutService.toggleNotes();
+    } else if (checkKeyCombo(ev, keys.toggleIssuePanel)) {
+      ev.preventDefault();
+      this._layoutService.toggleAddTaskPanel();
+    } else if (checkKeyCombo(ev, keys.triggerSync)) {
+      ev.preventDefault();
+      if (await this._syncProviderService.isEnabled$.pipe(first()).toPromise()) {
+        this._syncProviderService.sync();
+      }
     } else if (checkKeyCombo(ev, keys.toggleBookmarks)) {
       ev.preventDefault();
       if (this._workContextService.activeWorkContextType === WorkContextType.PROJECT) {

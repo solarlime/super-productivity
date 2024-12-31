@@ -4,6 +4,7 @@ import { Task, TaskPlanned, TaskState, TaskWithSubTasks } from '../task.model';
 import { taskAdapter } from './task.adapter';
 import { devError } from '../../../util/dev-error';
 import { TODAY_TAG } from '../../tag/tag.const';
+import { IssueProvider } from '../../issue/issue.model';
 
 // TODO fix null stuff here
 
@@ -23,7 +24,10 @@ const mapSubTasksToTasks = (tasksIN: any[]): TaskWithSubTasks[] => {
       }
     });
 };
-const mapSubTasksToTask = (task: Task | null, s: TaskState): TaskWithSubTasks | null => {
+export const mapSubTasksToTask = (
+  task: Task | null,
+  s: TaskState,
+): TaskWithSubTasks | null => {
   if (!task) {
     return null;
   }
@@ -126,14 +130,13 @@ export const selectSelectedTaskId = createSelector(
   selectTaskFeatureState,
   (state) => state.selectedTaskId,
 );
-export const selectTaskAdditionalInfoTargetPanel = createSelector(
+export const selectTaskDetailTargetPanel = createSelector(
   selectTaskFeatureState,
-  (state: TaskState) => state.taskAdditionalInfoTargetPanel,
+  (state: TaskState) => state.taskDetailTargetPanel,
 );
 export const selectSelectedTask = createSelector(
   selectTaskFeatureState,
   (s): TaskWithSubTasks => {
-    // @ts-ignore
     // @ts-ignore
     return s.selectedTaskId && mapSubTasksToTask(s.entities[s.selectedTaskId], s);
   },
@@ -187,6 +190,17 @@ export const selectTasksById = createSelector(
     props.ids ? (props.ids.map((id) => state.entities[id]) as Task[]) : [],
 );
 
+export const selectPlannedTasksById = createSelector(
+  selectTaskFeatureState,
+  (state: TaskState, props: { ids: string[] }): Task[] =>
+    props.ids
+      ? (props.ids.map((id) => state.entities[id]) as Task[])
+          // there is a short moment when the reminder is already there but the task is not
+          // and there is another when a tasks get deleted
+          .filter((task) => !!task?.plannedAt)
+      : [],
+);
+
 export const selectTasksWithSubTasksByIds = createSelector(
   selectTaskFeatureState,
   (state: TaskState, props: { ids: string[] }): TaskWithSubTasks[] =>
@@ -219,7 +233,7 @@ export const selectMainTasksWithoutTag = createSelector(
 export const selectAllCalendarTaskEventIds = createSelector(
   selectAllTasks,
   (tasks: Task[]): string[] =>
-    tasks.filter((task) => task.issueType === 'CALENDAR').map((t) => t.issueId as string),
+    tasks.filter((task) => task.issueType === 'ICAL').map((t) => t.issueId as string),
 );
 
 export const selectTasksWorkedOnOrDoneFlat = createSelector(
@@ -309,3 +323,12 @@ export const selectTasksByTag = createSelector(
     return tasks.filter((task) => task.tagIds.indexOf(props.tagId) !== -1);
   },
 );
+
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+export const selectAllTaskIssueIdsForIssueProvider = (issueProvider: IssueProvider) => {
+  return createSelector(selectAllTasks, (tasks: Task[]): string[] => {
+    return tasks
+      .filter((task) => task.issueProviderId === issueProvider.id)
+      .map((t) => t.issueId as string);
+  });
+};

@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import {
   addNewTagsFromShortSyntax,
@@ -32,9 +32,19 @@ import { T } from '../../../t.const';
 import { MatDialog } from '@angular/material/dialog';
 import { DialogConfirmComponent } from '../../../ui/dialog-confirm/dialog-confirm.component';
 import { LayoutService } from '../../../core-ui/layout/layout.service';
+import { DEFAULT_GLOBAL_CONFIG } from '../../config/default-global-config.const';
 
 @Injectable()
 export class ShortSyntaxEffects {
+  private _actions$ = inject(Actions);
+  private _taskService = inject(TaskService);
+  private _tagService = inject(TagService);
+  private _projectService = inject(ProjectService);
+  private _globalConfigService = inject(GlobalConfigService);
+  private _snackService = inject(SnackService);
+  private _matDialog = inject(MatDialog);
+  private _layoutService = inject(LayoutService);
+
   shortSyntax$: any = createEffect(() =>
     this._actions$.pipe(
       ofType(addTask, updateTask),
@@ -79,7 +89,13 @@ export class ShortSyntaxEffects {
         ),
       ),
       mergeMap(([{ task, originalAction }, tags, projects, defaultProjectId]) => {
-        const r = shortSyntax(task, tags, projects);
+        const r = shortSyntax(
+          task,
+          this._globalConfigService?.cfg?.shortSyntax ||
+            DEFAULT_GLOBAL_CONFIG.shortSyntax,
+          tags,
+          projects,
+        );
         if (environment.production) {
           console.log('shortSyntax', r);
         }
@@ -149,7 +165,9 @@ export class ShortSyntaxEffects {
         }
 
         if (r.newTagTitles.length) {
-          actions.push(addNewTagsFromShortSyntax({ task, newTitles: r.newTagTitles }));
+          actions.push(
+            addNewTagsFromShortSyntax({ taskId: task.id, newTitles: r.newTagTitles }),
+          );
         }
 
         if (tagIds && tagIds.length) {
@@ -162,7 +180,6 @@ export class ShortSyntaxEffects {
               updateTaskTags({
                 task,
                 newTagIds: unique(tagIds),
-                oldTagIds: task.tagIds,
               }),
             );
           }
@@ -178,7 +195,7 @@ export class ShortSyntaxEffects {
       ofType(addNewTagsFromShortSyntax),
       // needed cause otherwise task gets the focus after blur & hide
       tap((v) => this._layoutService.hideAddTaskBar()),
-      concatMap(({ task, newTitles }) => {
+      concatMap(({ taskId, newTitles }) => {
         return this._matDialog
           .open(DialogConfirmComponent, {
             restoreFocus: true,
@@ -199,7 +216,9 @@ export class ShortSyntaxEffects {
           })
           .afterClosed()
           .pipe(
-            mergeMap((isConfirm: boolean) => {
+            // NOTE: it is important to get a fresh task here, since otherwise we might run into #3728
+            withLatestFrom(this._taskService.getByIdOnce$(taskId)),
+            mergeMap(([isConfirm, task]) => {
               const actions: any[] = [];
               if (isConfirm) {
                 const newTagIds = [...task.tagIds];
@@ -214,7 +233,6 @@ export class ShortSyntaxEffects {
                   updateTaskTags({
                     task,
                     newTagIds: unique(newTagIds),
-                    oldTagIds: task.tagIds,
                   }),
                 );
               }
@@ -224,15 +242,4 @@ export class ShortSyntaxEffects {
       }),
     ),
   );
-
-  constructor(
-    private _actions$: Actions,
-    private _taskService: TaskService,
-    private _tagService: TagService,
-    private _projectService: ProjectService,
-    private _globalConfigService: GlobalConfigService,
-    private _snackService: SnackService,
-    private _matDialog: MatDialog,
-    private _layoutService: LayoutService,
-  ) {}
 }

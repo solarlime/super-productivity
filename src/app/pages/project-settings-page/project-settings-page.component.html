@@ -4,7 +4,7 @@
       class="mat-h1"
       style="display: flex; align-items: center"
     >
-      <mat-icon style="margin-right: 8px">list</mat-icon>
+      <mat-icon style="margin-right: 8px">folder_special</mat-icon>
       <span>{{T.PS.PROJECT_SETTINGS|translate}}</span>
     </h1>
     <section class="config-section">
@@ -22,21 +22,5 @@
         [section]="projectThemeSettingsFormCfg"
       ></config-section>
     </section>
-
-    <h2
-      class="mat-h2"
-      style="margin-top: 24px"
-    >
-      <span>{{T.PS.ISSUE_INTEGRATION|translate}}</span>
-    </h2>
-    <div *ngFor="let section of issueIntegrationFormCfg; trackBy:trackBySectionKey;">
-      <section class="config-section">
-        <config-section
-          (save)="saveIssueProviderCfg($event)"
-          [cfg]="getIssueIntegrationCfg(section.key)"
-          [section]="section"
-        ></config-section>
-      </section>
-    </div>
   </div>
 </div>

@@ -1,7 +1,6 @@
 import { updateGlobalConfigSection } from './global-config.actions';
 import { createFeatureSelector, createReducer, createSelector, on } from '@ngrx/store';
 import {
-  CalendarProvider,
   DominaModeConfig,
   EvaluationConfig,
   FocusModeConfig,
@@ -10,16 +9,18 @@ import {
   MiscConfig,
   PomodoroConfig,
   ReminderConfig,
+  ScheduleConfig,
+  ShortSyntaxConfig,
   SoundConfig,
   SyncConfig,
   TakeABreakConfig,
-  TimelineConfig,
 } from '../global-config.model';
 import { DEFAULT_GLOBAL_CONFIG } from '../default-global-config.const';
 import { loadAllData } from '../../../root-store/meta/load-all-data.action';
 import { migrateGlobalConfigState } from '../migrate-global-config.util';
 import { MODEL_VERSION_KEY } from '../../../app.constants';
 import { MODEL_VERSION } from '../../../core/model-version';
+import { getHoursFromClockString } from '../../../util/get-hours-from-clock-string';
 
 export const CONFIG_FEATURE_NAME = 'globalConfig';
 export const selectConfigFeatureState =
@@ -27,6 +28,10 @@ export const selectConfigFeatureState =
 export const selectMiscConfig = createSelector(
   selectConfigFeatureState,
   (cfg): MiscConfig => cfg.misc,
+);
+export const selectShortSyntaxConfig = createSelector(
+  selectConfigFeatureState,
+  (cfg): ShortSyntaxConfig => cfg.shortSyntax,
 );
 export const selectSoundConfig = createSelector(
   selectConfigFeatureState,
@@ -50,7 +55,7 @@ export const selectTakeABreakConfig = createSelector(
 );
 export const selectTimelineConfig = createSelector(
   selectConfigFeatureState,
-  (cfg): TimelineConfig => cfg.timeline,
+  (cfg): ScheduleConfig => cfg.schedule,
 );
 
 export const selectIsDominaModeConfig = createSelector(
@@ -75,17 +80,6 @@ export const selectReminderConfig = createSelector(
   (cfg): ReminderConfig => cfg.reminder,
 );
 
-export const selectCalendarProviders = createSelector(
-  selectConfigFeatureState,
-  (cfg): CalendarProvider[] => cfg.calendarIntegration.calendarProviders,
-);
-
-export const selectCalendarProviderById = createSelector(
-  selectCalendarProviders,
-  (calProviders, props: { id: string }): CalendarProvider | undefined =>
-    calProviders.find((calProvider) => calProvider.id === props.id),
-);
-
 export const initialGlobalConfigState: GlobalConfigState = {
   ...DEFAULT_GLOBAL_CONFIG,
   [MODEL_VERSION_KEY]: MODEL_VERSION.GLOBAL_CONFIG,
@@ -108,4 +102,22 @@ export const globalConfigReducer = createReducer<GlobalConfigState>(
       ...sectionCfg,
     },
   })),
+);
+
+export const selectTimelineWorkStartEndHours = createSelector(
+  selectConfigFeatureState,
+  (
+    cfg,
+  ): {
+    workStart: number;
+    workEnd: number;
+  } | null => {
+    if (!cfg.schedule.isWorkStartEndEnabled) {
+      return null;
+    }
+    return {
+      workStart: getHoursFromClockString(cfg.schedule.workStart),
+      workEnd: getHoursFromClockString(cfg.schedule.workEnd),
+    };
+  },
 );

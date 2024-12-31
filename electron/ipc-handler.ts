@@ -71,12 +71,9 @@ export const initIpcInterfaces = (): void => {
     registerShowAppShortCuts(cfg);
   });
 
-  ipcMain.on(
-    IPC.JIRA_SETUP_IMG_HEADERS,
-    (ev, { jiraCfg, wonkyCookie }: { jiraCfg: JiraCfg; wonkyCookie?: string }) => {
-      setupRequestHeadersForImages(jiraCfg, wonkyCookie);
-    },
-  );
+  ipcMain.on(IPC.JIRA_SETUP_IMG_HEADERS, (ev, { jiraCfg }: { jiraCfg: JiraCfg }) => {
+    setupRequestHeadersForImages(jiraCfg);
+  });
 
   ipcMain.on(IPC.JIRA_MAKE_REQUEST_EVENT, (ev, request) => {
     sendJiraRequest(request);
@@ -190,7 +187,8 @@ async function execWithFrontendErrorHandlerInform(
       }
     });
   } else {
-    const res = await dialog.showMessageBox(null, {
+    const mainWin = getWin();
+    const res = await dialog.showMessageBox(mainWin, {
       type: 'question',
       buttons: ['Cancel', 'Yes, execute!'],
       defaultId: 2,

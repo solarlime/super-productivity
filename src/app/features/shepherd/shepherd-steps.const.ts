@@ -16,8 +16,10 @@ import { WorkContextService } from '../work-context/work-context.service';
 import { ShepherdService } from './shepherd.service';
 import { fromEvent, merge, of, timer } from 'rxjs';
 
-const PRIMARY_CLASSES = 'mat-flat-button mat-button-base mat-primary';
-const SECONDARY_CLASSES = 'mat-button mat-button-base';
+const PRIMARY_CLASSES =
+  'mdc-button mdc-button--unelevated mat-mdc-unelevated-button mat-primary mat-mdc-button-base';
+const SECONDARY_CLASSES =
+  'mdc-button mdc-button--unelevated mat-mdc-unelevated-button mat-mdc-button-base';
 
 const NEXT_BTN = {
   classes: PRIMARY_CLASSES,
@@ -42,7 +44,6 @@ export enum TourId {
   DeleteTask = 'DeleteTask',
   Sync = 'Sync',
   Projects = 'Projects',
-  Calendars = 'Calendars',
   ProductivityHelper = 'ProductivityHelper',
   IssueProviders = 'IssueProviders',
   FinishDay = 'FinishDay',
@@ -258,7 +259,7 @@ export const SHEPHERD_STEPS = (
       : [
           {
             title: 'Task Details',
-            text: 'There is more you you can do with task. Tap on the task.',
+            text: 'There is more you can do with tasks. Tap on the task.',
             attachTo: {
               element: 'task',
               on: 'bottom' as any,
@@ -435,22 +436,34 @@ export const SHEPHERD_STEPS = (
         shepherdService,
       ),
     },
+
+    // ------------------------------
     {
-      title: 'Projects',
+      id: TourId.IssueProviders,
+      beforeShowPromise: () => router.navigate(['tag/TODAY/tasks']),
+      title: 'Issue Integrations & Calendars',
+      text: 'You can import tasks from a variety of third party tools. To click on this icon <span class="material-icons">playlist_add</span> in the top right corner.',
       attachTo: {
-        element: '.tour-projects',
+        element: '.tour-issuePanelTrigger',
         on: 'bottom',
       },
-      highlightClass: 'shepherd-highlight-inner',
-      text: '<p>Projects are also used to import tasks from <strong>issue providers</strong> like <strong>Jira, OpenProject, GitHub, GitLab, Redmine and Gitea</strong>.</p>',
-      buttons: [NEXT_BTN],
+      when: nextOnObs(
+        layoutService.isShowIssuePanel$.pipe(filter((v) => !!v)),
+        shepherdService,
+      ),
+    },
+    {
+      id: TourId.IssueProviders,
+      title: 'Issue Integrations & Calendars',
+      text: 'To configure an issue provider or calendar, click on one of the buttons in the panel. But for now, lets continue.',
+      buttons: [{ ...NEXT_BTN, text: 'Alright!' }],
     },
 
     // ------------------------------
     {
       id: TourId.Sync,
       title: 'Syncing & Data Privacy',
-      text: "<p>Super Productivity takes your data privacy very serious. This means that <strong>you decide what will be saved and where</strong>. <strong>The app does NOT collect any data </strong> and there are no user accounts or registration required.</p><p>It's free and open source and always will be.</p><p>This is important since data is often sold for marketing purposes and leaks happen more often than you would think.</p>",
+      text: "<p>Super Productivity takes your data privacy very seriously. This means that <strong>you decide what will be saved and where</strong>. <strong>The app does NOT collect any data </strong> and there are no user accounts or registration required.</p><p>It's free and open source and always will be.</p><p>This is important since data is often sold for marketing purposes and leaks happen more often than you would think.</p>",
       buttons: [{ ...NEXT_BTN, text: 'That is cool, I guess' }],
     },
     {
@@ -476,7 +489,7 @@ export const SHEPHERD_STEPS = (
       text: `${CLICK_B} on <span class="material-icons">settings</span> <strong>Settings</strong>!`,
       attachTo: {
         element: '.tour-settingsMenuBtn',
-        on: 'right',
+        on: 'top',
       },
       when: nextOnObs(
         router.events.pipe(
@@ -522,52 +535,6 @@ export const SHEPHERD_STEPS = (
     {
       title: 'Configure Sync',
       text: 'This covers syncing. If you have any questions you can always ask them <a href="https://github.com/johannesjo/super-productivity/discussions">on the projects GitHub page</a>. ',
-      buttons: [NEXT_BTN],
-    },
-
-    // ------------------------------
-    {
-      id: TourId.Calendars,
-      when: {
-        show: () => {
-          router.navigate(['config']).then(() => {
-            shepherdService.next();
-          });
-        },
-      },
-    },
-    {
-      title: 'Connect Calendars',
-      text: `On the settings page, you can also find the <strong>Calendars</strong> section. ${CLICK_B} on it!`,
-      beforeShowPromise: () => promiseTimeout(500),
-      attachTo: {
-        element: '.config-section:nth-of-type(6)',
-        on: 'top',
-      },
-      when: (() => {
-        let intId: number;
-        return {
-          show: () => {
-            intId = waitForEl('.tour-calendarSectionOpen', () => shepherdService.next());
-          },
-          hide: () => {
-            window.clearInterval(intId);
-          },
-        };
-      })(),
-      scrollTo: true,
-    },
-    {
-      title: 'Connect Calendars',
-      // eslint-disable-next-line max-len
-      text: `<p>You will need a link or file path to your calendar to show its events when they are due and within the timeline. You can load calendar data as iCal.</p><ul>
-<li><a target="_blank" href=\"https://support.google.com/calendar/answer/37648?hl=en#zippy=%2Csync-your-google-calendar-view-edit%2Cget-your-calendar-view-only\">Get iCal Link for Google Calendar</a></li>
-<li><a target="_blank" href=\"https://support.pushpay.com/s/article/How-do-I-get-an-iCal-link-from-Office-365\">Get iCal Link for Outlook 365</a></li>
-</ul>`,
-      attachTo: {
-        element: '.config-section:nth-of-type(6)',
-        on: 'top',
-      },
       buttons: [NEXT_BTN],
     },
 
@@ -790,6 +757,7 @@ export const SHEPHERD_STEPS = (
           <li>${KEY_COMBO('taskDelete')}: Delete Task</li>
           <li>${KEY_COMBO('taskToggleDone')}: Toggle done</li>
           <li>${KEY_COMBO('taskAddSubTask')}: Add new sub task</li>
+          <li>${KEY_COMBO('taskAddAttachment')}: Attach a file or link to the task</li>
           <li>${KEY_COMBO('togglePlay')}: Toggle tracking</li>
           </ul>
 

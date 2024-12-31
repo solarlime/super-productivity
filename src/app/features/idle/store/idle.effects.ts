@@ -1,9 +1,8 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { ChromeExtensionInterfaceService } from '../../../core/chrome-extension-interface/chrome-extension-interface.service';
 import { WorkContextService } from '../../work-context/work-context.service';
 import { TaskService } from '../../tasks/task.service';
-import { GlobalConfigService } from '../../config/global-config.service';
 import { MatDialog } from '@angular/material/dialog';
 import { Store } from '@ngrx/store';
 import { UiHelperService } from '../../ui-helper/ui-helper.service';
@@ -33,7 +32,6 @@ import { IPC } from '../../../../../electron/shared-with-frontend/ipc-events.con
 import { SimpleCounterService } from '../../simple-counter/simple-counter.service';
 import { selectIdleTime, selectIsIdle } from './idle.selectors';
 import { turnOffAllSimpleCounterCounters } from '../../simple-counter/store/simple-counter.actions';
-import { IdleService } from '../idle.service';
 import { DialogIdleComponent } from '../dialog-idle/dialog-idle.component';
 import { selectIdleConfig } from '../../config/store/global-config.reducer';
 import { devError } from '../../../util/dev-error';
@@ -48,12 +46,24 @@ import { DialogConfirmComponent } from '../../../ui/dialog-confirm/dialog-confir
 import { T } from '../../../t.const';
 import { DateService } from 'src/app/core/date/date.service';
 import { ipcIdleTime$ } from '../../../core/ipc-events';
+import { TakeABreakService } from '../../take-a-break/take-a-break.service';
 
 const DEFAULT_MIN_IDLE_TIME = 60000;
 const IDLE_POLL_INTERVAL = 1000;
 
 @Injectable()
 export class IdleEffects {
+  private actions$ = inject(Actions);
+  private _chromeExtensionInterfaceService = inject(ChromeExtensionInterfaceService);
+  private _workContextService = inject(WorkContextService);
+  private _taskService = inject(TaskService);
+  private _simpleCounterService = inject(SimpleCounterService);
+  private _matDialog = inject(MatDialog);
+  private _store = inject(Store);
+  private _uiHelperService = inject(UiHelperService);
+  private _dateService = inject(DateService);
+  private _takeABreakService = inject(TakeABreakService);
+
   private _isFrontEndIdlePollRunning = false;
   private _clearIdlePollInterval?: () => void;
   private _isDialogOpen: boolean = false;
@@ -179,7 +189,13 @@ export class IdleEffects {
         }
       }),
       isNotNullOrUndefined(),
-      map((dialogRes) => idleDialogResult(dialogRes)),
+      withLatestFrom(this._store.select(selectIdleTime)),
+      map(([dialogRes, idleTime]) =>
+        idleDialogResult({
+          ...dialogRes,
+          idleTime,
+        }),
+      ),
       tap(() => (this._isDialogOpen = false)),
     ),
   );
@@ -187,8 +203,7 @@ export class IdleEffects {
   handleIdleDialogResult$ = createEffect(() =>
     this.actions$.pipe(
       ofType(idleDialogResult),
-      withLatestFrom(this._store.select(selectIdleTime)),
-      tap(([{ trackItems, simpleCounterToggleBtnsWhenNoTrackItems }, idleTime]) => {
+      tap(({ trackItems, simpleCounterToggleBtnsWhenNoTrackItems, idleTime }) => {
         this._cancelIdlePoll();
         // handle dialog result weirdness :(
         if (!trackItems) {
@@ -229,6 +244,7 @@ export class IdleEffects {
           return;
         }
 
+        // TODO remove TASK_AND_BREAK case completely
         const itemsWithMappedIdleTime = trackItems.map((trackItem) => ({
           ...trackItem,
           time: trackItem.time === 'IDLE_TIME' ? idleTime : trackItem.time,
@@ -239,18 +255,20 @@ export class IdleEffects {
         });
 
         const breakItems = itemsWithMappedIdleTime.filter(
-          (item: IdleTrackItem) =>
-            item.type === 'BREAK' || item.type === 'TASK_AND_BREAK',
+          (item: IdleTrackItem) => item.type === 'BREAK',
         );
         if (breakItems.length) {
           this._store.dispatch(triggerResetBreakTimer());
           breakItems.forEach((item) => {
             this._workContextService.addToBreakTimeForActiveContext(undefined, item.time);
           });
+        } else if (itemsWithMappedIdleTime[0]?.isResetBreakTimer) {
+          this._store.dispatch(triggerResetBreakTimer());
+          this._workContextService.addToBreakTimeForActiveContext(undefined, 1);
         }
 
         const taskItems = itemsWithMappedIdleTime.filter(
-          (item: IdleTrackItem) => item.type === 'TASK' || item.type === 'TASK_AND_BREAK',
+          (item: IdleTrackItem) => item.type === 'TASK',
         );
         let taskItemId: string | undefined;
         taskItems.forEach((taskItem) => {
@@ -276,23 +294,11 @@ export class IdleEffects {
     ),
   );
 
-  constructor(
-    private actions$: Actions,
-    private _chromeExtensionInterfaceService: ChromeExtensionInterfaceService,
-    private _workContextService: WorkContextService,
-    private _taskService: TaskService,
-    private _simpleCounterService: SimpleCounterService,
-    private _configService: GlobalConfigService,
-    private _matDialog: MatDialog,
-    private _store: Store,
-    private _uiHelperService: UiHelperService,
-    private _idleService: IdleService,
-    private _dateService: DateService,
-  ) {
-    // window.setTimeout(() => {
-    //   this._store.dispatch(triggerIdle({ idleTime: 60 * 1000 }));
-    // }, 2700);
-  }
+  // constructor() {
+  //   window.setTimeout(() => {
+  //     this._store.dispatch(triggerIdle({ idleTime: 60 * 1000 }));
+  //   }, 2700);
+  // }
 
   private _initIdlePoll(initialIdleTime: number): void {
     const idleStart = Date.now();

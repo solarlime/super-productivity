@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { addTask, deleteTask, undoDeleteTask, updateTask } from './task.actions';
 import { select, Store } from '@ngrx/store';
@@ -28,6 +28,15 @@ import { EMPTY } from 'rxjs';
 
 @Injectable()
 export class TaskUiEffects {
+  private _actions$ = inject(Actions);
+  private _store$ = inject<Store<any>>(Store);
+  private _notifyService = inject(NotifyService);
+  private _taskService = inject(TaskService);
+  private _bannerService = inject(BannerService);
+  private _snackService = inject(SnackService);
+  private _globalConfigService = inject(GlobalConfigService);
+  private _workContextService = inject(WorkContextService);
+
   taskCreatedSnack$: any = createEffect(
     () =>
       this._actions$.pipe(
@@ -69,7 +78,7 @@ export class TaskUiEffects {
     () =>
       this._store$.pipe(select(selectConfigFeatureState)).pipe(
         switchMap((globalCfg) =>
-          globalCfg && globalCfg.misc.isNotifyWhenTimeEstimateExceeded
+          globalCfg && globalCfg.timeTracking.isNotifyWhenTimeEstimateExceeded
             ? // reset whenever the current taskId changes (but no the task data, which is polled afterwards)
               this._store$.pipe(select(selectCurrentTaskId)).pipe(
                 distinctUntilChanged(),
@@ -100,7 +109,7 @@ export class TaskUiEffects {
     () =>
       this._store$.pipe(select(selectConfigFeatureState)).pipe(
         switchMap((globalCfg) =>
-          globalCfg && globalCfg.misc.isNotifyWhenTimeEstimateExceeded
+          globalCfg && globalCfg.timeTracking.isNotifyWhenTimeEstimateExceeded
             ? this._bannerService.activeBanner$.pipe(
                 switchMap((activeBanner) =>
                   activeBanner?.id === BannerId.TimeEstimateExceeded
@@ -135,17 +144,6 @@ export class TaskUiEffects {
       ),
     { dispatch: false },
   );
-
-  constructor(
-    private _actions$: Actions,
-    private _store$: Store<any>,
-    private _notifyService: NotifyService,
-    private _taskService: TaskService,
-    private _bannerService: BannerService,
-    private _snackService: SnackService,
-    private _globalConfigService: GlobalConfigService,
-    private _workContextService: WorkContextService,
-  ) {}
 
   private _notifyAboutTimeEstimateExceeded(currentTask: Task): void {
     const title = truncate(currentTask.title);

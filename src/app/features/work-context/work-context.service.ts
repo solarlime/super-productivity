@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { select, Store } from '@ngrx/store';
 import { combineLatest, interval, Observable, of, timer } from 'rxjs';
 import {
@@ -27,7 +27,7 @@ import {
 } from 'rxjs/operators';
 import { TODAY_TAG } from '../tag/tag.const';
 import { TagService } from '../tag/tag.service';
-import { ArchiveTask, Task, TaskPlanned, TaskWithSubTasks } from '../tasks/task.model';
+import { ArchiveTask, Task, TaskWithSubTasks } from '../tasks/task.model';
 import { hasTasksToWorkOn, mapEstimateRemainingFromTasks } from './work-context.util';
 import {
   flattenTasks,
@@ -56,7 +56,7 @@ import {
   selectDoneBacklogTaskIdsForActiveContext,
   selectDoneTaskIdsForActiveContext,
   selectStartableTasksForActiveContext,
-  selectTimelineTasks,
+  selectTrackableTasksForActiveContext,
 } from './store/work-context.selectors';
 import { GlobalTrackingIntervalService } from '../../core/global-tracking-interval/global-tracking-interval.service';
 import { Note } from '../note/note.model';
@@ -74,6 +74,15 @@ import { PersistenceService } from '../../core/persistence/persistence.service';
   providedIn: 'root',
 })
 export class WorkContextService {
+  private _store$ = inject<Store<WorkContextState>>(Store);
+  private _actions$ = inject(Actions);
+  private _tagService = inject(TagService);
+  private _globalTrackingIntervalService = inject(GlobalTrackingIntervalService);
+  private _dateService = inject(DateService);
+  private _router = inject(Router);
+  private _translateService = inject(TranslateService);
+  private _persistenceService = inject(PersistenceService);
+
   // here because to avoid circular dependencies
   // should be treated as private
   _isAllDataLoaded$: Observable<boolean> = this._actions$.pipe(
@@ -136,14 +145,7 @@ export class WorkContextService {
   );
 
   activeWorkContextTitle$: Observable<string> = this.activeWorkContext$.pipe(
-    switchMap((activeContext) =>
-      activeContext.id === TODAY_TAG.id && activeContext.title === TODAY_TAG.title
-        ? this._translateService.onLangChange.pipe(
-            startWith(this._translateService.currentLang),
-            map(() => this._translateService.instant(T.G.TODAY_TAG_TITLE)),
-          )
-        : of(activeContext.title),
-    ),
+    map((activeContext) => activeContext.title),
   );
 
   mainWorkContext$: Observable<WorkContext> = this._isAllDataLoaded$.pipe(
@@ -156,7 +158,7 @@ export class WorkContextService {
           routerLink: `tag/${mainWorkContext.id}`,
           // TODO get pinned noteIds
           noteIds: [],
-        } as WorkContext),
+        }) as WorkContext,
     ),
     switchMap((mainWorkContext) =>
       mainWorkContext.id === TODAY_TAG.id && mainWorkContext.title === TODAY_TAG.title
@@ -224,6 +226,23 @@ export class WorkContextService {
     shareReplay(1),
   );
 
+  todaysTasksInProject$: Observable<TaskWithSubTasks[]> = this.todaysTasks$.pipe(
+    map((tasks) =>
+      tasks
+        .filter(
+          (task) =>
+            task.tagIds.includes(TODAY_TAG.id) ||
+            task.subTasks.some((subTask) => subTask.tagIds.includes(TODAY_TAG.id)),
+        )
+        .map((task) => ({
+          ...task,
+          subTasks: task.subTasks.filter((subTask) =>
+            subTask.tagIds.includes(TODAY_TAG.id),
+          ),
+        })),
+    ),
+  );
+
   undoneTasks$: Observable<TaskWithSubTasks[]> = this.todaysTasks$.pipe(
     map((tasks) => tasks.filter((task) => task && !task.isDone)),
   );
@@ -253,10 +272,10 @@ export class WorkContextService {
     shareReplay(1),
   );
 
-  timelineTasks$: Observable<{
-    planned: TaskPlanned[];
-    unPlanned: Task[];
-  }> = this._store$.pipe(select(selectTimelineTasks));
+  trackableTasksForActiveContext$: Observable<Task[]> = this._afterDataLoadedOnce$.pipe(
+    switchMap(() => this._store$),
+    select(selectTrackableTasksForActiveContext),
+  );
 
   workingToday$: Observable<any> = this._globalTrackingIntervalService.todayDateStr$.pipe(
     switchMap((worklogStrDate) => this.getTimeWorkedForDay$(worklogStrDate)),
@@ -275,6 +294,11 @@ export class WorkContextService {
   );
 
   estimateRemainingToday$: Observable<number> = this.todaysTasks$.pipe(
+    map(mapEstimateRemainingFromTasks),
+    distinctUntilChanged(),
+  );
+
+  todayRemainingInProject$: Observable<number> = this.todaysTasksInProject$.pipe(
     map(mapEstimateRemainingFromTasks),
     distinctUntilChanged(),
   );
@@ -303,16 +327,7 @@ export class WorkContextService {
     shareReplay(1),
   );
 
-  constructor(
-    private _store$: Store<WorkContextState>,
-    private _actions$: Actions,
-    private _tagService: TagService,
-    private _globalTrackingIntervalService: GlobalTrackingIntervalService,
-    private _dateService: DateService,
-    private _router: Router,
-    private _translateService: TranslateService,
-    private _persistenceService: PersistenceService,
-  ) {
+  constructor() {
     this.isToday$.subscribe((v) => (this.isToday = v));
 
     this.activeWorkContextTypeAndId$.subscribe((v) => {

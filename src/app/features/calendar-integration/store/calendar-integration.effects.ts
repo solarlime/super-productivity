@@ -1,31 +1,37 @@
-import { Inject, Injectable, LOCALE_ID } from '@angular/core';
-import { Actions, createEffect } from '@ngrx/effects';
+import { Injectable, inject } from '@angular/core';
+import { createEffect } from '@ngrx/effects';
 import { Store } from '@ngrx/store';
-import { selectCalendarProviders } from '../../config/store/global-config.reducer';
 import { distinctUntilChanged, first, map, switchMap, tap } from 'rxjs/operators';
 import { BehaviorSubject, EMPTY, forkJoin, timer } from 'rxjs';
-import { HttpClient } from '@angular/common/http';
 import { GlobalTrackingIntervalService } from '../../../core/global-tracking-interval/global-tracking-interval.service';
 import { BannerService } from '../../../core/banner/banner.service';
 import { DatePipe } from '@angular/common';
-import { CalendarProvider } from '../../config/global-config.model';
 import { CalendarIntegrationEvent } from '../calendar-integration.model';
-import { TaskService } from '../../tasks/task.service';
 import { isCalenderEventDue } from '../is-calender-event-due';
 import { CalendarIntegrationService } from '../calendar-integration.service';
-import { LS } from '../../../core/persistence/storage-keys.const';
-import { getWorklogStr } from '../../../util/get-work-log-str';
 import { BannerId } from '../../../core/banner/banner.model';
 import { selectTaskByIssueId } from '../../tasks/store/task.selectors';
 import { NavigateToTaskService } from '../../../core-ui/navigate-to-task/navigate-to-task.service';
 import { T } from '../../../t.const';
 import { isValidUrl } from '../../../util/is-valid-url';
 import { distinctUntilChangedObject } from '../../../util/distinct-until-changed-object';
+import { selectCalendarProviders } from '../../issue/store/issue-provider.selectors';
+import { IssueProviderCalendar } from '../../issue/issue.model';
+import { IssueService } from '../../issue/issue.service';
+import { isToday } from '../../../util/is-today.util';
 
 const CHECK_TO_SHOW_INTERVAL = 60 * 1000;
 
 @Injectable()
 export class CalendarIntegrationEffects {
+  private _store = inject(Store);
+  private _globalTrackingIntervalService = inject(GlobalTrackingIntervalService);
+  private _bannerService = inject(BannerService);
+  private _datePipe = inject(DatePipe);
+  private _calendarIntegrationService = inject(CalendarIntegrationService);
+  private _navigateToTaskService = inject(NavigateToTaskService);
+  private _issueService = inject(IssueService);
+
   pollChanges$ = createEffect(
     () =>
       this._globalTrackingIntervalService.todayDateStr$.pipe(
@@ -52,16 +58,31 @@ export class CalendarIntegrationEffects {
                 // timer(0, 10000).pipe(
                 tap(() => console.log('REQUEST CALENDAR', calProvider)),
                 switchMap(() =>
-                  this._calendarIntegrationService.requestEvents(calProvider),
+                  this._calendarIntegrationService.requestEvents$(calProvider),
                 ),
                 switchMap((allEventsToday) =>
                   timer(0, CHECK_TO_SHOW_INTERVAL).pipe(
                     tap(() => {
+                      if (calProvider.isAutoImportForCurrentDay) {
+                        allEventsToday.forEach((calEv) => {
+                          if (isToday(calEv.start)) {
+                            this._issueService.addTaskFromIssue({
+                              issueProviderKey: 'ICAL',
+                              issueProviderId: calProvider.id,
+                              issueDataReduced: calEv,
+                              // from this context we should always add to the default project rather than current context
+                              isForceDefaultProject: true,
+                            });
+                          }
+                        });
+                        // this._issueService.addTaskFromIssue()
+                      }
+
                       const eventsToShowBannerFor = allEventsToday.filter((calEv) =>
                         isCalenderEventDue(
                           calEv,
                           calProvider,
-                          this._skippedEventIds,
+                          this._calendarIntegrationService.skippedEventIds$.getValue(),
                           now,
                         ),
                       );
@@ -82,47 +103,18 @@ export class CalendarIntegrationEffects {
   );
 
   private _currentlyShownBanners$ = new BehaviorSubject<
-    { id: string; calEv: CalendarIntegrationEvent; calProvider: CalendarProvider }[]
+    { id: string; calEv: CalendarIntegrationEvent; calProvider: IssueProviderCalendar }[]
   >([]);
   showBanner = createEffect(
-    () =>
-      this._currentlyShownBanners$.pipe(
-        tap((v) => console.log('this._currentlyShownBanners$', v)),
-        tap((v) => this._showBanner(v)),
-      ),
+    () => this._currentlyShownBanners$.pipe(tap((v) => this._showOrHideBanner(v))),
     {
       dispatch: false,
     },
   );
 
-  private readonly _skippedEventIds: string[] = [];
-
-  constructor(
-    private _actions$: Actions,
-    private _store: Store,
-    private _http: HttpClient,
-    private _globalTrackingIntervalService: GlobalTrackingIntervalService,
-    private _bannerService: BannerService,
-    private _datePipe: DatePipe,
-    private _taskService: TaskService,
-    private _calendarIntegrationService: CalendarIntegrationService,
-    private _navigateToTaskService: NavigateToTaskService,
-    @Inject(LOCALE_ID) private locale: string,
-  ) {
-    if (localStorage.getItem(LS.CALENDER_EVENTS_LAST_SKIP_DAY) === getWorklogStr()) {
-      try {
-        const skippedEvIds = JSON.parse(
-          localStorage.getItem(LS.CALENDER_EVENTS_SKIPPED_TODAY) as string,
-        );
-        // TODO comment in after dev
-        this._skippedEventIds = skippedEvIds;
-      } catch (e) {}
-    }
-  }
-
   private _addEvToShow(
     calEv: CalendarIntegrationEvent,
-    calProvider: CalendarProvider,
+    calProvider: IssueProviderCalendar,
   ): void {
     const curVal = this._currentlyShownBanners$.getValue();
     console.log('addEvToShow', curVal, calEv);
@@ -136,26 +128,19 @@ export class CalendarIntegrationEffects {
   }
 
   private _skipEv(evId: string): void {
-    this._skippedEventIds.push(evId);
-    localStorage.setItem(
-      LS.CALENDER_EVENTS_SKIPPED_TODAY,
-      JSON.stringify(this._skippedEventIds),
-    );
-    localStorage.setItem(LS.CALENDER_EVENTS_LAST_SKIP_DAY, getWorklogStr());
+    this._calendarIntegrationService.skipCalendarEvent(evId);
     this._currentlyShownBanners$.next(
       this._currentlyShownBanners$.getValue().filter((v) => v.id !== evId),
     );
   }
 
-  private async _showBanner(
+  private async _showOrHideBanner(
     allEvsToShow: {
       id: string;
       calEv: CalendarIntegrationEvent;
-      calProvider: CalendarProvider;
+      calProvider: IssueProviderCalendar;
     }[],
   ): Promise<void> {
-    console.log('SHOW BANNER');
-
     const firstEntry = allEvsToShow[0];
     if (!firstEntry) {
       this._bannerService.dismiss(BannerId.CalendarEvent);
@@ -181,8 +166,8 @@ export class CalendarIntegrationEffects {
           ? T.F.CALENDARS.BANNER.TXT_PAST_MULTIPLE
           : T.F.CALENDARS.BANNER.TXT_PAST
         : nrOfAllBanners > 1
-        ? T.F.CALENDARS.BANNER.TXT_MULTIPLE
-        : T.F.CALENDARS.BANNER.TXT,
+          ? T.F.CALENDARS.BANNER.TXT_MULTIPLE
+          : T.F.CALENDARS.BANNER.TXT,
       translateParams: {
         title: calEv.title,
         start,
@@ -206,17 +191,13 @@ export class CalendarIntegrationEffects {
             label: T.F.CALENDARS.BANNER.ADD_AS_TASK,
             fn: () => {
               this._skipEv(calEv.id);
-              this._taskService.addAndSchedule(
-                calEv.title,
-                {
-                  projectId: calProvider.defaultProjectId,
-                  issueId: calEv.id,
-                  issueProviderId: calProvider.id,
-                  issueType: 'CALENDAR',
-                  timeEstimate: calEv.duration,
-                },
-                calEv.start,
-              );
+              this._issueService.addTaskFromIssue({
+                issueProviderKey: 'ICAL',
+                issueProviderId: calProvider.id,
+                issueDataReduced: calEv,
+                // from the banner we should always add to the default project rather than current context
+                isForceDefaultProject: true,
+              });
             },
           },
     });

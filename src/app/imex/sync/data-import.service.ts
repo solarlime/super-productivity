@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { AppDataComplete } from './sync.model';
 import { PersistenceService } from '../../core/persistence/persistence.service';
 import { SnackService } from '../../core/snack/snack.service';
@@ -21,15 +21,15 @@ import { isLegacyAppData } from './is-legacy-app-data.util';
   providedIn: 'root',
 })
 export class DataImportService {
-  constructor(
-    private _persistenceService: PersistenceService,
-    private _snackService: SnackService,
-    private _reminderService: ReminderService,
-    private _imexMetaService: ImexMetaService,
-    private _dataInitService: DataInitService,
-    private _dataRepairService: DataRepairService,
-    private _translateService: TranslateService,
-  ) {
+  private _persistenceService = inject(PersistenceService);
+  private _snackService = inject(SnackService);
+  private _reminderService = inject(ReminderService);
+  private _imexMetaService = inject(ImexMetaService);
+  private _dataInitService = inject(DataInitService);
+  private _dataRepairService = inject(DataRepairService);
+  private _translateService = inject(TranslateService);
+
+  constructor() {
     this._isCheckForStrayLocalDBBackupAndImport();
   }
 
@@ -96,7 +96,7 @@ export class DataImportService {
           : migratedData;
 
         // clear database to have a clean one and delete legacy stuff
-        await this._persistenceService.clearDatabaseExceptBackup();
+        await this._persistenceService.clearDatabaseExceptBackupAndLocalOnlyModel();
 
         // save data to database first then load to store from there
         await this._persistenceService.importComplete(mergedData);
@@ -105,12 +105,13 @@ export class DataImportService {
         this._imexMetaService.setDataImportInProgress(false);
         this._snackService.open({ type: 'SUCCESS', msg: T.F.SYNC.S.SUCCESS_IMPORT });
       } catch (e) {
+        console.error(e);
+        await this._importLocalDBBackup();
+        // NOTE: needs to come after otherwise the snack will never show, due to the success snack of the import
         this._snackService.open({
           type: 'ERROR',
           msg: T.F.SYNC.S.ERROR_FALLBACK_TO_BACKUP,
         });
-        console.error(e);
-        await this._importLocalDBBackup();
         this._imexMetaService.setDataImportInProgress(false);
       }
     } else if (this._dataRepairService.isRepairPossibleAndConfirmed(migratedData)) {
@@ -130,9 +131,8 @@ export class DataImportService {
   private async _mergeWithLocalOmittedFields(
     newData: AppDataComplete,
   ): Promise<AppDataComplete> {
-    const oldLocalData: AppDataComplete = await this._persistenceService.loadComplete(
-      true,
-    );
+    const oldLocalData: AppDataComplete =
+      await this._persistenceService.loadComplete(true);
     const mergedData = { ...newData };
     GLOBAL_CONFIG_LOCAL_ONLY_FIELDS.forEach((op) => {
       const oldLocalValue = get(oldLocalData.globalConfig, op);

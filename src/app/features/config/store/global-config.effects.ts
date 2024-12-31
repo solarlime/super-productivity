@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
 import { filter, tap, withLatestFrom } from 'rxjs/operators';
 import { Store } from '@ngrx/store';
@@ -13,9 +13,18 @@ import { loadAllData } from '../../../root-store/meta/load-all-data.action';
 import { DEFAULT_GLOBAL_CONFIG } from '../default-global-config.const';
 import { KeyboardConfig } from '../keyboard-config.model';
 import { updateGlobalConfigSection } from './global-config.actions';
+import { MiscConfig } from '../global-config.model';
+import { hideSideNav, toggleSideNav } from '../../../core-ui/layout/store/layout.actions';
 
 @Injectable()
 export class GlobalConfigEffects {
+  private _actions$ = inject(Actions);
+  private _persistenceService = inject(PersistenceService);
+  private _languageService = inject(LanguageService);
+  private _dateService = inject(DateService);
+  private _snackService = inject(SnackService);
+  private _store = inject<Store<any>>(Store);
+
   updateConfig$: any = createEffect(
     () =>
       this._actions$.pipe(
@@ -116,7 +125,7 @@ export class GlobalConfigEffects {
         // eslint-disable-next-line
         filter(
           ({ sectionKey, sectionCfg }) =>
-            sectionCfg && (sectionCfg as any).startOfNextDay,
+            sectionCfg && !!(sectionCfg as MiscConfig).startOfNextDay,
         ),
         tap(({ sectionKey, sectionCfg }) => {
           // eslint-disable-next-line
@@ -139,14 +148,24 @@ export class GlobalConfigEffects {
     { dispatch: false },
   );
 
-  constructor(
-    private _actions$: Actions,
-    private _persistenceService: PersistenceService,
-    private _languageService: LanguageService,
-    private _dateService: DateService,
-    private _snackService: SnackService,
-    private _store: Store<any>,
-  ) {}
+  toggleNavOnMinimalNavChange$: any = createEffect(
+    () =>
+      this._actions$.pipe(
+        ofType(updateGlobalConfigSection),
+        filter(({ sectionKey, sectionCfg }) => sectionKey === 'misc'),
+        // eslint-disable-next-line
+        filter(
+          ({ sectionKey, sectionCfg }) =>
+            sectionCfg && 'isUseMinimalNav' in (sectionCfg as MiscConfig),
+        ),
+        tap(({ sectionKey, sectionCfg }) => {
+          this._store.dispatch(hideSideNav());
+          this._store.dispatch(toggleSideNav());
+          window.dispatchEvent(new Event('resize'));
+        }),
+      ),
+    { dispatch: false },
+  );
 
   private _saveToLs(
     [action, completeState]: [any, any],

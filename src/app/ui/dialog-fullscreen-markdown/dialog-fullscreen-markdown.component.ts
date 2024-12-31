@@ -1,10 +1,17 @@
-import { ChangeDetectionStrategy, Component, Inject, OnDestroy } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, OnDestroy } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { T } from '../../t.const';
 import { Subscription } from 'rxjs';
 import { ESCAPE } from '@angular/cdk/keycodes';
 import { LS } from '../../core/persistence/storage-keys.const';
 import { isSmallScreen } from '../../util/is-small-screen';
+import { FormsModule } from '@angular/forms';
+import { MarkdownComponent } from 'ngx-markdown';
+import { MatButtonToggle, MatButtonToggleGroup } from '@angular/material/button-toggle';
+import { MatTooltip } from '@angular/material/tooltip';
+import { MatIcon } from '@angular/material/icon';
+import { MatButton } from '@angular/material/button';
+import { TranslatePipe } from '@ngx-translate/core';
 
 type ViewMode = 'SPLIT' | 'PARSED' | 'TEXT_ONLY';
 const ALL_VIEW_MODES: ['SPLIT', 'PARSED', 'TEXT_ONLY'] = ['SPLIT', 'PARSED', 'TEXT_ONLY'];
@@ -14,17 +21,30 @@ const ALL_VIEW_MODES: ['SPLIT', 'PARSED', 'TEXT_ONLY'] = ['SPLIT', 'PARSED', 'TE
   templateUrl: './dialog-fullscreen-markdown.component.html',
   styleUrls: ['./dialog-fullscreen-markdown.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    FormsModule,
+    MarkdownComponent,
+    MatButtonToggleGroup,
+    MatButtonToggle,
+    MatTooltip,
+    MatIcon,
+    MatButton,
+    TranslatePipe,
+  ],
 })
 export class DialogFullscreenMarkdownComponent implements OnDestroy {
+  _matDialogRef = inject<MatDialogRef<DialogFullscreenMarkdownComponent>>(MatDialogRef);
+  data = inject(MAT_DIALOG_DATA);
+
   T: typeof T = T;
   viewMode: ViewMode = isSmallScreen() ? 'TEXT_ONLY' : 'SPLIT';
 
   private _subs: Subscription = new Subscription();
 
-  constructor(
-    public _matDialogRef: MatDialogRef<DialogFullscreenMarkdownComponent>,
-    @Inject(MAT_DIALOG_DATA) public data: any,
-  ) {
+  constructor() {
+    const _matDialogRef = this._matDialogRef;
+    const data = this.data;
+
     const lastViewMode = localStorage.getItem(LS.LAST_FULLSCREEN_EDIT_VIEW_MODE);
     if (
       ALL_VIEW_MODES.includes(lastViewMode as ViewMode) &&
